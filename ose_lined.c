@@ -23,6 +23,8 @@
 
 /* memmove */
 #include <string.h>
+/* raise */
+#include <signal.h>
 
 #include "ose_conf.h"
 #include "ose.h"
@@ -54,6 +56,7 @@ const int32_t buf_offset = BUF_OFFSET;
 #define CTRL(c) (c & 0x1f)
 #define BS 8
 #define LF 10
+#define RET 13
 #define SPC 32
 #define DEL 127
 
@@ -156,7 +159,6 @@ static void ose_lined_read(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_bundle vm_i = OSEVM_INPUT(osevm);
-    fflush(stdout);
     int32_t c = ose_termRead();
     ose_pushInt32(vm_s, c);
     ose_pushString(vm_i, "/!/lined/char");
@@ -185,6 +187,9 @@ static void ose_lined_char(ose_bundle osevm)
         deccurpos(vm_le);
         pushline(osevm, b + BUF_OFFSET, buflen, buflen, curpos - 1);
         break;
+    case CTRL('c'):
+        raise(SIGINT);
+        break;
     case CTRL('e'):
         ose_writeInt32(vm_le, CURPOS_OFFSET, buflen);
         pushline(osevm, b + BUF_OFFSET, buflen, buflen, buflen);
@@ -194,6 +199,7 @@ static void ose_lined_char(ose_bundle osevm)
         pushline(osevm, b + BUF_OFFSET, buflen, buflen, curpos + 1);
         break;
     case LF:
+    case RET:
         ose_pushString(vm_s, b + BUF_OFFSET);
         clear(vm_le);
         ose_pushString(vm_i, "/!/lined/line");
@@ -219,10 +225,16 @@ static void ose_lined_format(ose_bundle osevm)
     char buf[8192];
     memset(buf, 0, 8192);
     int32_t n = ose_pprintBundle(vm_s, buf, 8192);
-    buf[n] = '\n';
-    buf[n + 1] = '\r';
+    buf[n++] = '\n';
+    buf[n++] = '\r';
+    int i, ndashes = 8;
+    for(i = 0; i < ndashes; i++)
+    {
+        buf[n++] = '-';
+    }
+    buf[n++] = '\n';
+    buf[n++] = '\r';
     ose_pushString(vm_s, buf);
-    /* pushline(osevm, buf, 0, 0, 0); */
 }
 
 void ose_main(ose_bundle osevm)
@@ -265,7 +277,8 @@ void ose_main(ose_bundle osevm)
         ose_pushString(vm_s, "/>/_e");
         ose_pushString(vm_s, "/!/swap");
         ose_pushString(vm_s, "/!/exec");
-        ose_pushString(vm_s, "/!/drop");
+        /* ose_pushString(vm_s, "/!/drop"); */
+        ose_pushString(vm_s, "/</_e");
         ose_pushString(vm_s, "/!/bundle/all");
         ose_pushString(vm_s, "/!/lined/format");
         ose_pushString(vm_s, "/!/push");
