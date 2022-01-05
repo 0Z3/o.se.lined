@@ -227,13 +227,6 @@ static void ose_lined_format(ose_bundle osevm)
     int32_t n = ose_pprintBundle(vm_s, buf, 8192);
     buf[n++] = '\n';
     buf[n++] = '\r';
-    int i, ndashes = 8;
-    for(i = 0; i < ndashes; i++)
-    {
-        buf[n++] = '-';
-    }
-    buf[n++] = '\n';
-    buf[n++] = '\r';
     ose_pushString(vm_s, buf);
 }
 
@@ -277,10 +270,12 @@ void ose_main(ose_bundle osevm)
         ose_pushString(vm_s, "/>/_e");
         ose_pushString(vm_s, "/!/swap");
         ose_pushString(vm_s, "/!/exec");
-        /* ose_pushString(vm_s, "/!/drop"); */
         ose_pushString(vm_s, "/</_e");
         ose_pushString(vm_s, "/!/bundle/all");
         ose_pushString(vm_s, "/!/lined/format");
+        /* ose_pushString(vm_s, "/s/--------\n\r"); */
+        /* ose_pushString(vm_s, "/!/push"); */
+        /* ose_pushString(vm_s, "/!/concat/strings"); */
         ose_pushString(vm_s, "/!/push");
         ose_pushString(vm_s, "/!/unpack/drop");
         ose_pushInt32(vm_s, 0);
