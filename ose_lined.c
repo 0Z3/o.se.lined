@@ -160,6 +160,7 @@ static void ose_lined_read(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_bundle vm_i = OSEVM_INPUT(osevm);
+    ose_drop(vm_s);             /* file descriptor */
     int32_t c = ose_termRead();
     ose_pushInt32(vm_s, c);
     ose_pushString(vm_i, "/!/lined/char");
