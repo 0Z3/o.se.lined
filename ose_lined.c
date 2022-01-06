@@ -231,10 +231,30 @@ static void ose_lined_format(ose_bundle osevm)
     ose_pushString(vm_s, buf);
 }
 
+static void ose_lined_print(ose_bundle osevm)
+{
+    ose_bundle vm_s = OSEVM_STACK(osevm);
+    /* arg check */
+    int32_t curpos = ose_popInt32(vm_s);
+    int32_t newlen = ose_popInt32(vm_s);
+    int32_t oldlen = ose_popInt32(vm_s);
+    if(curpos < newlen)
+    {
+        char buf[newlen - curpos];
+        int i;
+        for(i = 0; i < newlen - curpos; i++)
+        {
+            buf[i] = '\b';
+        }
+        ose_pushString(vm_s, buf);
+        ose_push(vm_s);
+        ose_concatenateStrings(vm_s);
+    }
+}
+
 static void ose_lined_prompt(ose_bundle osevm)
 {
     ose_bundle vm_le = ose_enter(osevm, "/le");
-    ose_bundle vm_i = OSEVM_INPUT(osevm);
     addchar(vm_le, '/');
     addchar(vm_le, ' ');
 }
@@ -267,6 +287,9 @@ void ose_main(ose_bundle osevm)
     ose_push(vm_s);
     ose_pushMessage(vm_s, "/lined/format", strlen("/lined/format"), 1,
                     OSETT_ALIGNEDPTR, ose_lined_format);
+    ose_push(vm_s);
+    ose_pushMessage(vm_s, "/lined/print", strlen("/lined/print"), 1,
+                    OSETT_ALIGNEDPTR, ose_lined_print);
     ose_push(vm_s);
     ose_pushMessage(vm_s, "/lined/prompt", strlen("/lined/prompt"), 1,
                     OSETT_ALIGNEDPTR, ose_lined_prompt);
