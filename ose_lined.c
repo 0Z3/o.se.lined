@@ -41,7 +41,8 @@
 #define BUFSIZE_OFFSET (OSE_BUNDLE_HEADER_LEN + 12)
 #define BUFLEN_OFFSET (BUFSIZE_OFFSET + 16)
 #define CURPOS_OFFSET (BUFLEN_OFFSET + 16)
-#define COLS_OFFSET (CURPOS_OFFSET + 16)
+/* placeholder until we actually keep track of cols */
+#define COLS_OFFSET CURPOS_OFFSET /* (CURPOS_OFFSET + 16) */
 /* skips over the size of the blob */
 #define BUF_OFFSET (COLS_OFFSET + 20)
 
@@ -230,6 +231,14 @@ static void ose_lined_format(ose_bundle osevm)
     ose_pushString(vm_s, buf);
 }
 
+static void ose_lined_prompt(ose_bundle osevm)
+{
+    ose_bundle vm_le = ose_enter(osevm, "/le");
+    ose_bundle vm_i = OSEVM_INPUT(osevm);
+    addchar(vm_le, '/');
+    addchar(vm_le, ' ');
+}
+
 void ose_main(ose_bundle osevm)
 {
     ose_pushContextMessage(osevm, 8192, "/le");
@@ -258,6 +267,9 @@ void ose_main(ose_bundle osevm)
     ose_push(vm_s);
     ose_pushMessage(vm_s, "/lined/format", strlen("/lined/format"), 1,
                     OSETT_ALIGNEDPTR, ose_lined_format);
+    ose_push(vm_s);
+    ose_pushMessage(vm_s, "/lined/prompt", strlen("/lined/prompt"), 1,
+                    OSETT_ALIGNEDPTR, ose_lined_prompt);
     ose_push(vm_s);
     ose_pushMessage(vm_s, "/lined/parse", strlen("/lined/parse"), 1,
                     OSETT_BLOB,
