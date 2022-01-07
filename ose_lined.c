@@ -236,6 +236,7 @@ static void ose_lined_print(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
     /* arg check */
+
     int32_t curpos = ose_popInt32(vm_s);
     int32_t newlen = ose_popInt32(vm_s);
     int32_t oldlen = ose_popInt32(vm_s);
@@ -309,9 +310,6 @@ void ose_main(ose_bundle osevm)
         ose_pushString(vm_s, "/</_e");
         ose_pushString(vm_s, "/!/bundle/all");
         ose_pushString(vm_s, "/!/lined/format");
-        /* ose_pushString(vm_s, "/s/--------\n\r"); */
-        /* ose_pushString(vm_s, "/!/push"); */
-        /* ose_pushString(vm_s, "/!/concat/strings"); */
         ose_pushString(vm_s, "/!/push");
         ose_pushString(vm_s, "/!/unpack/drop");
         ose_pushInt32(vm_s, 0);
