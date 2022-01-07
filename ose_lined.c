@@ -308,14 +308,14 @@ void ose_main(ose_bundle osevm)
         ose_pushString(vm_s, "/!/swap");
         ose_pushString(vm_s, "/!/exec");
         ose_pushString(vm_s, "/</_e");
-        ose_pushString(vm_s, "/!/bundle/all");
+        /* ose_pushString(vm_s, "/!/bundle/all"); */
         ose_pushString(vm_s, "/!/lined/format");
-        ose_pushString(vm_s, "/!/push");
-        ose_pushString(vm_s, "/!/unpack/drop");
+        /* ose_pushString(vm_s, "/!/push"); */
+        /* ose_pushString(vm_s, "/!/unpack/drop"); */
         ose_pushInt32(vm_s, 0);
         ose_pushInt32(vm_s, 0);
         ose_pushInt32(vm_s, 0);
-        ose_pushInt32(vm_s, 12);
+        ose_pushInt32(vm_s, 9);
         ose_bundleFromTop(vm_s);
         ose_push(vm_s);
         ose_push(vm_s);
