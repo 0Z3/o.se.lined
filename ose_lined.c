@@ -242,12 +242,13 @@ static void ose_lined_print(ose_bundle osevm)
     int32_t oldlen = ose_popInt32(vm_s);
     if(curpos < newlen)
     {
-        char buf[newlen - curpos];
+        char buf[(newlen - curpos) + 1];
         int i;
         for(i = 0; i < newlen - curpos; i++)
         {
             buf[i] = '\b';
         }
+        buf[newlen - curpos] = 0;
         ose_pushString(vm_s, buf);
         ose_push(vm_s);
         ose_concatenateStrings(vm_s);
