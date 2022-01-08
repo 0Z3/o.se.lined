@@ -448,7 +448,7 @@ void ose_main(ose_bundle osevm)
         /* now run the if statement */
         ose_pushString(vm_s, "/!/if");
         /* if uses exec which leaves a copy of env on the stack */
-        ose_pushString(vm_s, "/!/drop");
+        ose_pushString(vm_s, "/</_e");
         ose_pushInt32(vm_s, 12);
         ose_bundleFromTop(vm_s);
         ose_push(vm_s);
