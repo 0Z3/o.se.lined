@@ -395,10 +395,10 @@ void ose_main(ose_bundle osevm)
             ose_pushString(vm_s, "/!/swap");
             ose_pushString(vm_s, "/!/exec");
             ose_pushString(vm_s, "/</_e");
-            /* ose_pushString(vm_s, "/!/bundle/all"); */
+            ose_pushString(vm_s, "/!/bundle/all");
             ose_pushString(vm_s, "/!/lined/format");
-            /* ose_pushString(vm_s, "/!/push"); */
-            /* ose_pushString(vm_s, "/!/unpack/drop"); */
+            ose_pushString(vm_s, "/!/push");
+            ose_pushString(vm_s, "/!/unpack/drop");
             ose_pushString(vm_s, "/!/lined/prompt");
             ose_pushInt32(vm_s, 0);
             /* ose_pushInt32(vm_s, 2); */
@@ -411,7 +411,7 @@ void ose_main(ose_bundle osevm)
             ose_pushString(vm_s, "/!/length/item");
             ose_pushString(vm_s, "/!/nip");
             ose_pushString(vm_s, "/!/dup");
-            ose_pushInt32(vm_s, 25);
+            ose_pushInt32(vm_s, 28);
             ose_bundleFromTop(vm_s);
         }
         {
