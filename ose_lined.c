@@ -270,17 +270,6 @@ static void ose_lined_print(ose_bundle osevm)
     int32_t curpos = ose_popInt32(vm_s);
     int32_t newlen = ose_popInt32(vm_s);
     /* int32_t oldlen =  */ose_popInt32(vm_s);
-    int32_t o = ose_getFirstOffsetForMatch(vm_le, "/cmd");
-    /* if(o) */
-    if(0)
-    {
-        ose_copyElemAtOffset(o, vm_le, vm_s);
-        ose_swap(vm_s);
-        ose_push(vm_s);
-        ose_concatenateStrings(vm_s);
-        char * const b = ose_getBundlePtr(vm_le);
-        memset(b + o + 16, 0, strlen(b + o + 16));
-    }
     if(curpos < newlen)
     {
         char buf[(newlen - curpos) + 1];
