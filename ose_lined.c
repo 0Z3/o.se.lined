@@ -36,6 +36,24 @@
 #include "sys/ose_term.h"
 #include "ose_print.h"
 
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_GREEN   "\x1b[32m"
+#define ANSI_COLOR_YELLOW  "\x1b[33m"
+#define ANSI_COLOR_BLUE    "\x1b[34m"
+#define ANSI_COLOR_MAGENTA "\x1b[35m"
+#define ANSI_COLOR_CYAN    "\x1b[36m"
+#define ANSI_COLOR_WHITE   "\x1b[37m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
+
+#define ANSI_COLOR_BRIGHT_RED     "\x1b[91m"
+#define ANSI_COLOR_BRIGHT_GREEN   "\x1b[92m"
+#define ANSI_COLOR_BRIGHT_YELLOW  "\x1b[93m"
+#define ANSI_COLOR_BRIGHT_BLUE    "\x1b[94m"
+#define ANSI_COLOR_BRIGHT_MAGENTA "\x1b[95m"
+#define ANSI_COLOR_BRIGHT_CYAN    "\x1b[96m"
+#define ANSI_COLOR_BRIGHT_WHITE   "\x1b[97m"
+#define ANSI_COLOR_BRIGHT_RESET   "\x1b[0m"
+
 #define OSE_LINED_BUFSIZE 4096
 
 #define BUFSIZE_OFFSET (OSE_BUNDLE_HEADER_LEN + 12)
@@ -264,7 +282,6 @@ static void ose_lined_format(ose_bundle osevm)
 static void ose_lined_print(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
-    ose_bundle vm_le = ose_enter(osevm, "/le");
     /* arg check */
 
     int32_t curpos = ose_popInt32(vm_s);
@@ -388,11 +405,20 @@ void ose_main(ose_bundle osevm)
             ose_pushString(vm_s, "/!/bundle/all");
             ose_pushString(vm_s, "/!/lined/format");
             {
+                /* put the command at the beginning of the 
+                   output string, and add a newline at the 
+                   end of the formatted text */
                 ose_pushString(vm_s, "/>/le");
                 ose_pushString(vm_s, "/s//cmd");
                 ose_pushString(vm_s, "/!/lookup");
                 ose_pushString(vm_s, "/!/nip");
-                ose_pushString(vm_s, "/s/\n");
+
+                ose_pushString(vm_s, "/s/"ANSI_COLOR_BRIGHT_GREEN);
+                ose_pushString(vm_s, "/!/swap");
+                ose_pushString(vm_s, "/!/push");
+                ose_pushString(vm_s, "/!/concat/strings");
+                
+                ose_pushString(vm_s, "/s/"ANSI_COLOR_RESET"\n");
                 ose_pushString(vm_s, "/!/push");
                 ose_pushString(vm_s, "/!/concat/strings");
                 ose_pushString(vm_s, "/!/swap");
@@ -416,7 +442,7 @@ void ose_main(ose_bundle osevm)
             ose_pushString(vm_s, "/!/length/item");
             ose_pushString(vm_s, "/!/nip");
             ose_pushString(vm_s, "/!/dup");
-            ose_pushInt32(vm_s, 41);
+            ose_pushInt32(vm_s, 45);
             ose_bundleFromTop(vm_s);
         }
         {
