@@ -264,14 +264,15 @@ static void ose_lined_format(ose_bundle osevm)
 static void ose_lined_print(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
-    ose_bundle vm_le = OSEVM_STACK(osevm);
+    ose_bundle vm_le = ose_enter(osevm, "/le");
     /* arg check */
 
     int32_t curpos = ose_popInt32(vm_s);
     int32_t newlen = ose_popInt32(vm_s);
     /* int32_t oldlen =  */ose_popInt32(vm_s);
     int32_t o = ose_getFirstOffsetForMatch(vm_le, "/cmd");
-    if(o)
+    /* if(o) */
+    if(0)
     {
         ose_copyElemAtOffset(o, vm_le, vm_s);
         ose_swap(vm_s);
@@ -397,6 +398,21 @@ void ose_main(ose_bundle osevm)
             ose_pushString(vm_s, "/</_e");
             ose_pushString(vm_s, "/!/bundle/all");
             ose_pushString(vm_s, "/!/lined/format");
+            {
+                ose_pushString(vm_s, "/>/le");
+                ose_pushString(vm_s, "/s//cmd");
+                ose_pushString(vm_s, "/!/lookup");
+                ose_pushString(vm_s, "/!/nip");
+                ose_pushString(vm_s, "/s/\n");
+                ose_pushString(vm_s, "/!/push");
+                ose_pushString(vm_s, "/!/concat/strings");
+                ose_pushString(vm_s, "/!/swap");
+                ose_pushString(vm_s, "/!/push");
+                ose_pushString(vm_s, "/!/concat/strings");
+                ose_pushString(vm_s, "/s/\n");
+                ose_pushString(vm_s, "/!/push");
+                ose_pushString(vm_s, "/!/concat/strings");
+            }
             ose_pushString(vm_s, "/!/push");
             ose_pushString(vm_s, "/!/unpack/drop");
             ose_pushString(vm_s, "/!/lined/prompt");
@@ -411,7 +427,7 @@ void ose_main(ose_bundle osevm)
             ose_pushString(vm_s, "/!/length/item");
             ose_pushString(vm_s, "/!/nip");
             ose_pushString(vm_s, "/!/dup");
-            ose_pushInt32(vm_s, 28);
+            ose_pushInt32(vm_s, 41);
             ose_bundleFromTop(vm_s);
         }
         {
