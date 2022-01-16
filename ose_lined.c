@@ -23,10 +23,6 @@
 
 /* memmove */
 #include <string.h>
-/* raise */
-#include <signal.h>
-
-#include <unistd.h>
 
 #include "ose_conf.h"
 #include "ose.h"
@@ -35,7 +31,6 @@
 #include "ose_stackops.h"
 #include "ose_assert.h"
 #include "ose_vm.h"
-#include "sys/ose_term.h"
 #include "ose_print.h"
 
 #define ANSI_COLOR_RED     "\x1b[31m"
@@ -188,207 +183,206 @@ static void pushline(ose_bundle osevm,
     ose_pushInt32(vm_s, curpos);
 }
 
-static void ose_lined_read(ose_bundle osevm)
-{
-    ose_bundle vm_s = OSEVM_STACK(osevm);
-    ose_bundle vm_i = OSEVM_INPUT(osevm);
-    ose_drop(vm_s);             /* file descriptor */
-    char bytes[OSE_LINED_MAX_NUM_CHARS];
-    int32_t nbytes = ose_termRead(OSE_LINED_MAX_NUM_CHARS, bytes);
-    ose_assert(nbytes > 0);
-    if(nbytes > 1 && bytes[0] == ESC)
-    {
-        int32_t i;
-        for(i = nbytes - 1; i >= 0; --i)
-        {
-            ose_pushMessage(vm_s, "/lined/escseq",
-                            strlen("/lined/escseq"),
-                            1, OSETT_INT32, bytes[i]);
-        }
-        ose_pushString(vm_i, "/!/lined/char");
-    }
-    else
-    {
-        int32_t i;
-        for(i = nbytes - 1; i >= 0; --i)
-        {
-            ose_pushInt32(vm_s, bytes[i]);
-            ose_pushString(vm_i, "/!/lined/char");
-        }
-    }    
-}
-
 static void ose_lined_char(ose_bundle osevm)
 {
     ose_bundle vm_le = ose_enter(osevm, "/le");
     ose_bundle vm_s = OSEVM_STACK(osevm);
+    ose_bundle vm_c = OSEVM_CONTROL(osevm);
     /* ose_bundle vm_e = OSEVM_ENV(osevm); */
     ose_bundle vm_i = OSEVM_INPUT(osevm);
     ose_assert(ose_bundleHasAtLeastNElems(vm_s, 1) == OSETT_TRUE);
     ose_assert(ose_peekType(vm_s) == OSETT_MESSAGE);
     ose_assert(ose_peekMessageArgType(vm_s) == OSETT_INT32);
-    int32_t c = ose_popInt32(vm_s);
+    /* int32_t c = ose_popInt32(vm_s); */
     const char * const b = ose_getBundlePtr(vm_le);
     const char * const bufp = b + BUF_OFFSET;
     int32_t buflen = ose_readInt32(vm_le, BUFLEN_OFFSET);
     int32_t curpos = ose_readInt32(vm_le, CURPOS_OFFSET);
     int32_t promptlen = strlen(b + PROMPTSTRING_OFFSET);
-    switch(c)
+
+
+    int32_t numchars = 0;
+    if(ose_bundleHasAtLeastNElems(vm_s, 2) == OSETT_TRUE
+       && ose_peekType(vm_s) == OSETT_MESSAGE
+       && ose_peekMessageArgType(vm_s) == OSETT_INT32)
     {
-    case CTRL('a'):
-    {
-        int32_t o = strlen(b + PROMPTSTRING_OFFSET);
-        ose_writeInt32(vm_le, CURPOS_OFFSET, o);
-        pushline(osevm, b + BUF_OFFSET, buflen, buflen, o);
+        numchars = ose_popInt32(vm_s);
     }
-    break;
-    case CTRL('b'):
-        if(ose_readInt32(vm_le, CURPOS_OFFSET) >
-           promptlen)
+    if(numchars == 0)
+    {
+        return;
+    }
+    ose_assert(ose_bundleHasAtLeastNElems(vm_s, numchars) == OSETT_TRUE);
+
+    int32_t i = 0;
+    while(i < numchars)
+    {
+        if(ose_peekType(vm_s) != OSETT_MESSAGE
+           || ose_peekMessageArgType(vm_s) != OSETT_INT32)
         {
-            deccurpos(vm_le);
-            pushline(osevm, b + BUF_OFFSET, buflen, buflen,
-                     curpos - 1);
-        }
-        else
-        {
-            pushline(osevm, b + BUF_OFFSET, buflen, buflen,
-                     curpos);
-        }
-        break;
-    case CTRL('c'):
-        raise(SIGINT);
-        break;
-    case CTRL('d'):
-        if(curpos < buflen)
-        {
-            inccurpos(vm_le);
-            delchar(vm_le);
-            pushline(osevm, bufp, buflen, buflen - 1, curpos);
-        }
-        else
-        {
+            while(i < numchars)
+            {
+                ose_drop(vm_s);
+            }
             pushline(osevm, bufp, buflen, buflen, curpos);
+            return;
+        }
+        int32_t c = ose_popInt32(vm_s);
+        ++i;
+        switch(c)
+        {
+        case CTRL('a'):
+        {
+            int32_t o = strlen(b + PROMPTSTRING_OFFSET);
+            ose_writeInt32(vm_le, CURPOS_OFFSET, o);
+            pushline(osevm, b + BUF_OFFSET, buflen, buflen, o);
         }
         break;
-    case CTRL('e'):
-        ose_writeInt32(vm_le, CURPOS_OFFSET, buflen);
-        pushline(osevm, b + BUF_OFFSET, buflen, buflen, buflen);
-        break;
-    case CTRL('f'):
-        inccurpos(vm_le);
-        pushline(osevm, b + BUF_OFFSET, buflen, buflen, curpos + 1);
-        break;
-    case LF:
-    case RET:
-        ose_pushString(vm_s, b + BUF_OFFSET);
-        clear(vm_le);
-        ose_pushString(vm_i, "/!/lined/line");
-        break;
-    case BS:
-    case DEL:
-        if(ose_readInt32(vm_le, CURPOS_OFFSET) >
-           promptlen)
-        {
-            delchar(vm_le);
-            pushline(osevm, b + BUF_OFFSET,
-                     buflen, buflen - 1, curpos - 1);
-        }
-        else
-        {
-            pushline(osevm, b + BUF_OFFSET,
-                     buflen, buflen, curpos);
-        }
-        break;
-    case ESC:
-        if(ose_bundleHasAtLeastNElems(vm_s, 1) == OSETT_TRUE
-           && ose_peekType(vm_s) == OSETT_MESSAGE
-           && !strcmp(ose_peekAddress(vm_s), "/lined/escseq"))
-        {
-            char esccode[OSE_LINED_MAX_NUM_CHARS - 1];
-            int32_t i = 0;
-            while(ose_bundleHasAtLeastNElems(vm_s, 1) == OSETT_TRUE
-                  && ose_peekType(vm_s) == OSETT_MESSAGE
-                  && !strcmp(ose_peekAddress(vm_s), "/lined/escseq")
-                  && i < OSE_LINED_MAX_NUM_CHARS - 1)
+        case CTRL('b'):
+            if(ose_readInt32(vm_le, CURPOS_OFFSET) >
+               promptlen)
             {
-                esccode[i] = (char)ose_popInt32(vm_s);
-                ++i;
+                deccurpos(vm_le);
+                pushline(osevm, b + BUF_OFFSET, buflen, buflen,
+                         curpos - 1);
             }
-            switch(esccode[0])
+            else
             {
-            case 'b':
-            {
-                if(bufp[curpos - 1] == '/')
-                {
-                    deccurpos(vm_le);
-                    --curpos;
-                }
-                while(bufp[curpos - 1] != '/'
-                      && curpos > promptlen)
-                {
-                    deccurpos(vm_le);
-                    --curpos;
-                }
-                pushline(osevm, bufp, buflen, buflen,
-                         curpos);
-                
-            }
-            break;
-            case 'f':
-            {
-                while(bufp[curpos] != '/'
-                      && curpos <= buflen)
-                {
-                    inccurpos(vm_le);
-                    ++curpos;
-                }
-                /* inccurpos(vm_le); */
-                /* ++curpos; */
-                pushline(osevm, bufp, buflen, buflen,
+                pushline(osevm, b + BUF_OFFSET, buflen, buflen,
                          curpos);
             }
             break;
-            case BS:
-            case DEL:
+        case CTRL('c'):
+            /* raise(SIGINT); */
+            ose_pushString(vm_c, "/!/lined/binding/C^c");
+            ose_swap(vm_c);
+            pushline(osevm, bufp, buflen, buflen, curpos);
+            break;
+        case CTRL('d'):
+            if(curpos < buflen)
             {
-                int32_t i = 0;
-                if(bufp[curpos - 1] == '/')
-                {
-                    delchar(vm_le);
-                    --curpos;
-                    ++i;
-                }
-                while(bufp[curpos - 1] != '/'
-                      && curpos > promptlen)
-                {
-                    delchar(vm_le);
-                    --curpos;
-                    ++i;
-                }
-                pushline(osevm, bufp, buflen, buflen - i,
-                         curpos);
-                break;
+                inccurpos(vm_le);
+                delchar(vm_le);
+                pushline(osevm, bufp, buflen, buflen - 1, curpos);
             }
-            default:
+            else
+            {
                 pushline(osevm, bufp, buflen, buflen, curpos);
-                break;
             }
+            break;
+        case CTRL('e'):
+            ose_writeInt32(vm_le, CURPOS_OFFSET, buflen);
+            pushline(osevm, b + BUF_OFFSET, buflen, buflen, buflen);
+            break;
+        case CTRL('f'):
+            inccurpos(vm_le);
+            pushline(osevm, b + BUF_OFFSET, buflen, buflen, curpos + 1);
+            break;
+        case LF:
+        case RET:
+            ose_pushString(vm_s, b + BUF_OFFSET);
+            clear(vm_le);
+            ose_pushString(vm_i, "/!/lined/line");
+            break;
+        case BS:
+        case DEL:
+            if(ose_readInt32(vm_le, CURPOS_OFFSET) >
+               promptlen)
+            {
+                delchar(vm_le);
+                pushline(osevm, b + BUF_OFFSET,
+                         buflen, buflen - 1, curpos - 1);
+            }
+            else
+            {
+                pushline(osevm, b + BUF_OFFSET,
+                         buflen, buflen, curpos);
+            }
+            break;
+        case ESC:
+            if(i < numchars
+               && ose_peekType(vm_s) == OSETT_MESSAGE
+               && ose_peekMessageArgType(vm_s) == OSETT_INT32)
+            {
+                char ec = (char)ose_popInt32(vm_s);
+                ++i;
+                switch(ec)
+                {
+                case 'b':
+                {
+                    if(bufp[curpos - 1] == '/')
+                    {
+                        deccurpos(vm_le);
+                        --curpos;
+                    }
+                    while(bufp[curpos - 1] != '/'
+                          && curpos > promptlen)
+                    {
+                        deccurpos(vm_le);
+                        --curpos;
+                    }
+                    pushline(osevm, bufp, buflen, buflen,
+                             curpos);
+                
+                }
+                break;
+                case 'f':
+                {
+                    while(bufp[curpos] != '/'
+                          && curpos <= buflen)
+                    {
+                        inccurpos(vm_le);
+                        ++curpos;
+                    }
+                    pushline(osevm, bufp, buflen, buflen,
+                             curpos);
+                }
+                break;
+                case BS:
+                case DEL:
+                {
+                    int32_t i = 0;
+                    if(bufp[curpos - 1] == '/')
+                    {
+                        delchar(vm_le);
+                        --curpos;
+                        ++i;
+                    }
+                    while(bufp[curpos - 1] != '/'
+                          && curpos > promptlen)
+                    {
+                        delchar(vm_le);
+                        --curpos;
+                        ++i;
+                    }
+                    pushline(osevm, bufp, buflen, buflen - i,
+                             curpos);
+                    break;
+                }
+                default:
+                    pushline(osevm, bufp, buflen, buflen, curpos);
+                    break;
+                }
+                for( ; i < numchars; ++i)
+                {
+                    /* eat up the rest */
+                    ose_popInt32(vm_s);
+                }
+            }
+            else
+            {
+                /* we don't implement ESC at the moment */
+                pushline(osevm, b + BUF_OFFSET, buflen, buflen,
+                         curpos);
+            }
+            break;
+        default:
+            addchar(vm_le, c);
+            pushline(osevm, b + BUF_OFFSET,
+                     buflen, buflen + 1, curpos + 1);
+            break;
         }
-        else
-        {
-            /* we don't implement ESC at the moment */
-            pushline(osevm, b + BUF_OFFSET, buflen, buflen,
-                     curpos);
-        }
-        break;
-    default:
-        addchar(vm_le, c);
-        pushline(osevm, b + BUF_OFFSET,
-                 buflen, buflen + 1, curpos + 1);
-        break;
-    }
-    
+    }    
 }
 
 static void ose_lined_format(ose_bundle osevm)
@@ -473,9 +467,9 @@ void ose_main(ose_bundle osevm)
 
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_pushBundle(vm_s);
-    ose_pushMessage(vm_s, "/lined/read", strlen("/lined/read"), 1,
-                    OSETT_ALIGNEDPTR, ose_lined_read);
-    ose_push(vm_s);
+    /* ose_pushMessage(vm_s, "/lined/read", strlen("/lined/read"), 1, */
+    /*                 OSETT_ALIGNEDPTR, ose_lined_read); */
+    /* ose_push(vm_s); */
     ose_pushMessage(vm_s, "/lined/char", strlen("/lined/char"), 1,
                     OSETT_ALIGNEDPTR, ose_lined_char);
     ose_push(vm_s);
@@ -607,5 +601,11 @@ void ose_main(ose_bundle osevm)
         ose_bundleFromTop(vm_s);
         ose_push(vm_s);
     }
+    ose_push(vm_s);
+
+    ose_pushMessage(vm_s, "/lined/binding/C^c",
+                    strlen("/lined/binding/C^c"), 0);
+    ose_pushBundle(vm_s);
+    ose_push(vm_s);
     ose_push(vm_s);
 }
