@@ -60,7 +60,19 @@
 #define COLS_OFFSET CURPOS_OFFSET /* (CURPOS_OFFSET + 16) */
 /* skips over the size of the blob */
 #define BUF_OFFSET (COLS_OFFSET + 20)
-#define PROMPTSTRING_OFFSET (BUF_OFFSET + OSE_LINED_BUFSIZE + 12)
+
+#define BUFSIZE ose_readInt32(ose_getBundlePtr(vm_le), \
+                              BUFSIZE_OFFSET)
+#define BUFLEN ose_readInt32(ose_getBundlePtr(vm_le), BUFLEN_OFFSET)
+#define CURPOS ose_readInt32(ose_getBundlePtr(vm_le), CURPOS_OFFSET)
+#define BUFP ose_getBundlePtr(vm_le) + BUFSIZE_OFFSET
+
+#define PROMPTSTRING_OFFSET (OSE_BUNDLE_HEADER_LEN + 12)
+#define PROMPTSTRING ose_getBundlePtr(vm_lo) + PROMPTSTRING_OFFSET
+#define WORDBREAKCHARS_OFFSET PROMPTSTRING_OFFSET + \
+    (ose_pstrlen(PROMPTSTRING) + 12)
+#define WORDBREAKCHARS ose_getBundlePtr(vm_lo) +    \
+    WORDBREAKCHARS_OFFSET
 
 #ifdef OSE_DEBUG
 const int32_t bufsize_offset = BUFSIZE_OFFSET;
@@ -83,6 +95,7 @@ const int32_t promptstring_offset = PROMPTSTRING_OFFSET;
 #define DEL 127
 
 #define OSE_LINED_PROMPTSTRING "/ "
+#define OSE_LINED_WORDBREAKCHARS "/"
 
 #define OSE_LINED_MAX_NUM_CHARS 4
 
@@ -183,12 +196,28 @@ static void pushline(ose_bundle osevm,
     ose_pushInt32(vm_s, curpos);
 }
 
+static int chariswbc(char c, int32_t nwbcs,
+                     const char * const wbcs)
+{
+    int32_t i;
+    for(i = 0; i < nwbcs; i++)
+    {
+        if(c == wbcs[i])
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void ose_lined_char(ose_bundle osevm)
 {
     ose_bundle vm_le = ose_enter(osevm, "/le");
+    ose_assert(ose_getBundlePtr(vm_le));
+    ose_bundle vm_lo = ose_enter(osevm, "/lo");
+    ose_assert(ose_getBundlePtr(vm_lo));
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_bundle vm_c = OSEVM_CONTROL(osevm);
-    /* ose_bundle vm_e = OSEVM_ENV(osevm); */
     ose_bundle vm_i = OSEVM_INPUT(osevm);
     ose_assert(ose_bundleHasAtLeastNElems(vm_s, 1) == OSETT_TRUE);
     ose_assert(ose_peekType(vm_s) == OSETT_MESSAGE);
@@ -198,7 +227,7 @@ static void ose_lined_char(ose_bundle osevm)
     const char * const bufp = b + BUF_OFFSET;
     int32_t buflen = ose_readInt32(vm_le, BUFLEN_OFFSET);
     int32_t curpos = ose_readInt32(vm_le, CURPOS_OFFSET);
-    int32_t promptlen = strlen(b + PROMPTSTRING_OFFSET);
+    int32_t promptlen = strlen(PROMPTSTRING);
 
 
     int32_t numchars = 0;
@@ -233,7 +262,7 @@ static void ose_lined_char(ose_bundle osevm)
         {
         case CTRL('a'):
         {
-            int32_t o = strlen(b + PROMPTSTRING_OFFSET);
+            int32_t o = promptlen;
             ose_writeInt32(vm_le, CURPOS_OFFSET, o);
             pushline(osevm, b + BUF_OFFSET, buflen, buflen, o);
         }
@@ -304,18 +333,21 @@ static void ose_lined_char(ose_bundle osevm)
                && ose_peekType(vm_s) == OSETT_MESSAGE
                && ose_peekMessageArgType(vm_s) == OSETT_INT32)
             {
-                char ec = (char)ose_popInt32(vm_s);
+                const char ec = (char)ose_popInt32(vm_s);
+                const char * const wbcs = WORDBREAKCHARS;
+                const int32_t nwbcs = strlen(wbcs);
                 ++i;
                 switch(ec)
                 {
                 case 'b':
                 {
-                    if(bufp[curpos - 1] == '/')
+                    if(chariswbc(bufp[curpos - 1], nwbcs, wbcs))
                     {
                         deccurpos(vm_le);
                         --curpos;
                     }
-                    while(bufp[curpos - 1] != '/'
+                    
+                    while(!chariswbc(bufp[curpos - 1], nwbcs, wbcs)
                           && curpos > promptlen)
                     {
                         deccurpos(vm_le);
@@ -323,12 +355,16 @@ static void ose_lined_char(ose_bundle osevm)
                     }
                     pushline(osevm, bufp, buflen, buflen,
                              curpos);
-                
                 }
                 break;
                 case 'f':
                 {
-                    while(bufp[curpos] != '/'
+                    if(chariswbc(bufp[curpos], nwbcs, wbcs))
+                    {
+                        inccurpos(vm_le);
+                        ++curpos;
+                    }  
+                    while(!chariswbc(bufp[curpos], nwbcs, wbcs)
                           && curpos <= buflen)
                     {
                         inccurpos(vm_le);
@@ -342,13 +378,13 @@ static void ose_lined_char(ose_bundle osevm)
                 case DEL:
                 {
                     int32_t i = 0;
-                    if(bufp[curpos - 1] == '/')
+                    if(chariswbc(bufp[curpos - 1], nwbcs, wbcs))
                     {
                         delchar(vm_le);
                         --curpos;
                         ++i;
                     }
-                    while(bufp[curpos - 1] != '/'
+                    while(!chariswbc(bufp[curpos - 1], nwbcs, wbcs)
                           && curpos > promptlen)
                     {
                         delchar(vm_le);
@@ -423,8 +459,11 @@ static void ose_lined_prompt(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_bundle vm_le = ose_enter(osevm, "/le");
+    ose_assert(ose_getBundlePtr(vm_le));
+    ose_bundle vm_lo = ose_enter(osevm, "/lo");
+    ose_assert(ose_getBundlePtr(vm_lo));
     const char * const b = ose_getBundlePtr(vm_le);
-    const char * const promptstring = b + PROMPTSTRING_OFFSET;
+    const char * const promptstring = PROMPTSTRING;
     {
         int i = 0;
         for(; i < strlen(promptstring); i++)
@@ -446,8 +485,18 @@ static void ose_lined_init(ose_bundle osevm)
 
 void ose_main(ose_bundle osevm)
 {
+    /* main lined bundle */
     ose_pushContextMessage(osevm, 8192, "/le");
     ose_bundle vm_le = ose_enter(osevm, "/le");
+    /* options */
+    ose_pushContextMessage(osevm, 512, "/lo");
+    ose_bundle vm_lo = ose_enter(osevm, "/lo");
+    /* history */
+    ose_pushContextMessage(osevm, 8192, "/lh");
+    ose_bundle vm_lh = ose_enter(osevm, "/lh");
+    /* kill ring */
+    ose_pushContextMessage(osevm, 8192, "/lk");
+    ose_bundle vm_lk = ose_enter(osevm, "/lk");
     /* buf size */
     ose_pushMessage(vm_le, "/bs", 3, 1,
                     OSETT_INT32, OSE_LINED_BUFSIZE);
@@ -461,9 +510,17 @@ void ose_main(ose_bundle osevm)
     ose_pushMessage(vm_le, "/bf", 3, 1,
                     OSETT_BLOB, OSE_LINED_BUFSIZE, NULL);
     /* prompt string */
-    ose_pushMessage(vm_le, "/ps", 3, 1,
+    ose_pushMessage(vm_lo, "/ps", 3, 1,
                     OSETT_STRING, OSE_LINED_PROMPTSTRING);
-    /* add history support */
+    /* word break chars */
+    ose_pushMessage(vm_lo, "/wb", 3, 1,
+                    OSETT_STRING, OSE_LINED_WORDBREAKCHARS);
+    /* history */
+    ose_pushMessage(vm_lh, "/en", 3, 1,
+                    OSETT_INT32, 0);
+    ose_pushMessage(vm_lh, "/lh", 3, 0);
+    /* kill ring */
+    ose_pushMessage(vm_lk, "/lk", 3, 0);
 
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_pushBundle(vm_s);
@@ -509,7 +566,15 @@ void ose_main(ose_bundle osevm)
             ose_pushString(vm_s, "/!/assign");
             ose_pushString(vm_s, "/</le");
             /* remove prompt */
-            ose_pushInt32(vm_s, 2);
+            /* ose_pushInt32(vm_s, 2); */
+            ose_pushString(vm_s, "/>/lo");
+            
+            ose_pushString(vm_s, "/s//ps");
+            ose_pushString(vm_s, "/!/lookup");
+            ose_pushString(vm_s, "/!/nip");
+            ose_pushString(vm_s, "/!/length/item");
+            ose_pushString(vm_s, "/!/nip");
+            
             ose_pushString(vm_s, "/!/decat/string/fromstart");
             ose_pushString(vm_s, "/!/pop");
             ose_pushString(vm_s, "/!/nip");
@@ -552,14 +617,14 @@ void ose_main(ose_bundle osevm)
             /* ose_pushInt32(vm_s, 2); */
             /* ose_pushInt32(vm_s, 2); */
             /* use the length of the prompt as curpos and bufpos */
-            ose_pushString(vm_s, "/>/le");
-            ose_pushString(vm_s, "/ps");
+            ose_pushString(vm_s, "/>/lo");
+            ose_pushString(vm_s, "/s//ps");
             ose_pushString(vm_s, "/!/lookup");
             ose_pushString(vm_s, "/!/nip");
             ose_pushString(vm_s, "/!/length/item");
             ose_pushString(vm_s, "/!/nip");
             ose_pushString(vm_s, "/!/dup");
-            ose_pushInt32(vm_s, 45);
+            ose_pushInt32(vm_s, 50);
             ose_bundleFromTop(vm_s);
         }
         {
@@ -573,8 +638,8 @@ void ose_main(ose_bundle osevm)
             /* ose_pushInt32(vm_s, 2); */
             /* ose_pushInt32(vm_s, 2); */
             /* use the length of the prompt as curpos and bufpos */
-            ose_pushString(vm_s, "/>/le");
-            ose_pushString(vm_s, "/ps");
+            ose_pushString(vm_s, "/>/lo");
+            ose_pushString(vm_s, "/s//ps");
             ose_pushString(vm_s, "/!/lookup");
             ose_pushString(vm_s, "/!/nip");
             ose_pushString(vm_s, "/!/length/item");
@@ -586,7 +651,7 @@ void ose_main(ose_bundle osevm)
         /* get the copy of the input string for the test */
         ose_pushString(vm_s, "/!/rot");
         /* get a copy of the prompt */
-        ose_pushString(vm_s, "/>/le");
+        ose_pushString(vm_s, "/>/lo");
         ose_pushString(vm_s, "/s//ps");
         ose_pushString(vm_s, "/!/lookup");
         ose_pushString(vm_s, "/!/nip");
