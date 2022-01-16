@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019-21 John MacCallum Permission is hereby granted,
+  Copyright (c) 2019-22 John MacCallum Permission is hereby granted,
   free of charge, to any person obtaining a copy of this software
   and associated documentation files (the "Software"), to deal in
   the Software without restriction, including without limitation the
@@ -25,6 +25,8 @@
 #include <string.h>
 /* raise */
 #include <signal.h>
+
+#include <unistd.h>
 
 #include "ose_conf.h"
 #include "ose.h"
@@ -74,14 +76,20 @@ const int32_t buf_offset = BUF_OFFSET;
 const int32_t promptstring_offset = PROMPTSTRING_OFFSET;
 #endif
 
+#ifndef CTRL
 #define CTRL(c) (c & 0x1f)
+#endif
+
 #define BS 8
 #define LF 10
 #define RET 13
+#define ESC 27
 #define SPC 32
 #define DEL 127
 
 #define OSE_LINED_PROMPTSTRING "/ "
+
+#define OSE_LINED_MAX_NUM_CHARS 4
 
 static void ose_lined_prompt(ose_bundle osevm);
 
@@ -185,9 +193,29 @@ static void ose_lined_read(ose_bundle osevm)
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_bundle vm_i = OSEVM_INPUT(osevm);
     ose_drop(vm_s);             /* file descriptor */
-    int32_t c = ose_termRead();
-    ose_pushInt32(vm_s, c);
-    ose_pushString(vm_i, "/!/lined/char");
+    char bytes[OSE_LINED_MAX_NUM_CHARS];
+    int32_t nbytes = ose_termRead(OSE_LINED_MAX_NUM_CHARS, bytes);
+    ose_assert(nbytes > 0);
+    if(nbytes > 1 && bytes[0] == ESC)
+    {
+        int32_t i;
+        for(i = nbytes - 1; i >= 0; --i)
+        {
+            ose_pushMessage(vm_s, "/lined/escseq",
+                            strlen("/lined/escseq"),
+                            1, OSETT_INT32, bytes[i]);
+        }
+        ose_pushString(vm_i, "/!/lined/char");
+    }
+    else
+    {
+        int32_t i;
+        for(i = nbytes - 1; i >= 0; --i)
+        {
+            ose_pushInt32(vm_s, bytes[i]);
+            ose_pushString(vm_i, "/!/lined/char");
+        }
+    }    
 }
 
 static void ose_lined_char(ose_bundle osevm)
@@ -200,7 +228,8 @@ static void ose_lined_char(ose_bundle osevm)
     ose_assert(ose_peekType(vm_s) == OSETT_MESSAGE);
     ose_assert(ose_peekMessageArgType(vm_s) == OSETT_INT32);
     int32_t c = ose_popInt32(vm_s);
-    char *b = ose_getBundlePtr(vm_le);
+    const char * const b = ose_getBundlePtr(vm_le);
+    const char * const bufp = b + BUF_OFFSET;
     int32_t buflen = ose_readInt32(vm_le, BUFLEN_OFFSET);
     int32_t curpos = ose_readInt32(vm_le, CURPOS_OFFSET);
     int32_t promptlen = strlen(b + PROMPTSTRING_OFFSET);
@@ -212,7 +241,7 @@ static void ose_lined_char(ose_bundle osevm)
         ose_writeInt32(vm_le, CURPOS_OFFSET, o);
         pushline(osevm, b + BUF_OFFSET, buflen, buflen, o);
     }
-        break;
+    break;
     case CTRL('b'):
         if(ose_readInt32(vm_le, CURPOS_OFFSET) >
            promptlen)
@@ -229,6 +258,18 @@ static void ose_lined_char(ose_bundle osevm)
         break;
     case CTRL('c'):
         raise(SIGINT);
+        break;
+    case CTRL('d'):
+        if(curpos < buflen)
+        {
+            inccurpos(vm_le);
+            delchar(vm_le);
+            pushline(osevm, bufp, buflen, buflen - 1, curpos);
+        }
+        else
+        {
+            pushline(osevm, bufp, buflen, buflen, curpos);
+        }
         break;
     case CTRL('e'):
         ose_writeInt32(vm_le, CURPOS_OFFSET, buflen);
@@ -257,6 +298,88 @@ static void ose_lined_char(ose_bundle osevm)
         {
             pushline(osevm, b + BUF_OFFSET,
                      buflen, buflen, curpos);
+        }
+        break;
+    case ESC:
+        if(ose_bundleHasAtLeastNElems(vm_s, 1) == OSETT_TRUE
+           && ose_peekType(vm_s) == OSETT_MESSAGE
+           && !strcmp(ose_peekAddress(vm_s), "/lined/escseq"))
+        {
+            char esccode[OSE_LINED_MAX_NUM_CHARS - 1];
+            int32_t i = 0;
+            while(ose_bundleHasAtLeastNElems(vm_s, 1) == OSETT_TRUE
+                  && ose_peekType(vm_s) == OSETT_MESSAGE
+                  && !strcmp(ose_peekAddress(vm_s), "/lined/escseq")
+                  && i < OSE_LINED_MAX_NUM_CHARS - 1)
+            {
+                esccode[i] = (char)ose_popInt32(vm_s);
+                ++i;
+            }
+            switch(esccode[0])
+            {
+            case 'b':
+            {
+                if(bufp[curpos - 1] == '/')
+                {
+                    deccurpos(vm_le);
+                    --curpos;
+                }
+                while(bufp[curpos - 1] != '/'
+                      && curpos > promptlen)
+                {
+                    deccurpos(vm_le);
+                    --curpos;
+                }
+                pushline(osevm, bufp, buflen, buflen,
+                         curpos);
+                
+            }
+            break;
+            case 'f':
+            {
+                while(bufp[curpos] != '/'
+                      && curpos <= buflen)
+                {
+                    inccurpos(vm_le);
+                    ++curpos;
+                }
+                /* inccurpos(vm_le); */
+                /* ++curpos; */
+                pushline(osevm, bufp, buflen, buflen,
+                         curpos);
+            }
+            break;
+            case BS:
+            case DEL:
+            {
+                int32_t i = 0;
+                if(bufp[curpos - 1] == '/')
+                {
+                    delchar(vm_le);
+                    --curpos;
+                    ++i;
+                }
+                while(bufp[curpos - 1] != '/'
+                      && curpos > promptlen)
+                {
+                    delchar(vm_le);
+                    --curpos;
+                    ++i;
+                }
+                pushline(osevm, bufp, buflen, buflen - i,
+                         curpos);
+                break;
+            }
+            default:
+                pushline(osevm, bufp, buflen, buflen, curpos);
+                break;
+            }
+        }
+        else
+        {
+            /* we don't implement ESC at the moment */
+            pushline(osevm, b + BUF_OFFSET, buflen, buflen,
+                     curpos);
         }
         break;
     default:
