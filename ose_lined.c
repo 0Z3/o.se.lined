@@ -33,24 +33,6 @@
 #include "ose_vm.h"
 #include "ose_print.h"
 
-#define ANSI_COLOR_RED     "\x1b[31m"
-#define ANSI_COLOR_GREEN   "\x1b[32m"
-#define ANSI_COLOR_YELLOW  "\x1b[33m"
-#define ANSI_COLOR_BLUE    "\x1b[34m"
-#define ANSI_COLOR_MAGENTA "\x1b[35m"
-#define ANSI_COLOR_CYAN    "\x1b[36m"
-#define ANSI_COLOR_WHITE   "\x1b[37m"
-#define ANSI_COLOR_RESET   "\x1b[0m"
-
-#define ANSI_COLOR_BRIGHT_RED     "\x1b[91m"
-#define ANSI_COLOR_BRIGHT_GREEN   "\x1b[92m"
-#define ANSI_COLOR_BRIGHT_YELLOW  "\x1b[93m"
-#define ANSI_COLOR_BRIGHT_BLUE    "\x1b[94m"
-#define ANSI_COLOR_BRIGHT_MAGENTA "\x1b[95m"
-#define ANSI_COLOR_BRIGHT_CYAN    "\x1b[96m"
-#define ANSI_COLOR_BRIGHT_WHITE   "\x1b[97m"
-#define ANSI_COLOR_BRIGHT_RESET   "\x1b[0m"
-
 #define OSE_LINED_BUFSIZE 4096
 
 #define BUFSIZE_OFFSET (OSE_BUNDLE_HEADER_LEN + 12)
@@ -405,7 +387,8 @@ static void ose_lined_char(ose_bundle osevm)
             }
             int32_t len = strlen(p);
             int32_t plen = ose_pnbytes(len);
-            memcpy(bufp, p, plen);
+            memcpy(bufp + promptlen, p, plen);
+            len += promptlen;
             pushline(osevm, bufp, len, len, len);
             setposvars(vm_le, bufsize, len, len);
         }
@@ -422,16 +405,23 @@ static void ose_lined_char(ose_bundle osevm)
             }
             int32_t len = strlen(p);
             int32_t plen = ose_pnbytes(len);
-            memcpy(bufp, p, plen);
+            memcpy(bufp + promptlen, p, plen);
+            len += promptlen;
             pushline(osevm, bufp, len, len, len);
             setposvars(vm_le, bufsize, len, len);
         }
         break;
         case LF:
         case RET:
-            ose_pushString(vm_s, b + BUF_OFFSET);
+            if(curpos == promptlen)
+            {
+                pushline(osevm, bufp, buflen, buflen, curpos);
+                break;
+            }
+            ose_pushString(vm_s, b + BUF_OFFSET + promptlen);
             clear(vm_le);
-            ose_pushString(vm_i, "/!/lined/line");
+            ose_pushString(vm_c, "/!/lined/binding/RET");
+            ose_swap(vm_c);
             RESET_HISTNUM;
             break;
         case BS:
@@ -607,25 +597,52 @@ static void ose_lined_prompt(ose_bundle osevm)
     ose_assert(ose_getBundlePtr(vm_le));
     ose_bundle vm_lo = ose_enter(osevm, "/lo");
     ose_assert(ose_getBundlePtr(vm_lo));
-    const char * const b = ose_getBundlePtr(vm_le);
+    const char * const bufp = BUFP;
     const char * const promptstring = PROMPTSTRING;
+    const int32_t promptlen = strlen(promptstring);
     {
         int i = 0;
-        for(; i < strlen(promptstring); i++)
+        for(; i < promptlen; i++)
         {
             addchar(vm_le, promptstring[i]);
         }
     }
-    ose_pushString(vm_s, b + BUF_OFFSET);
-    ose_push(vm_s);
-    ose_concatenateStrings(vm_s);
+    ose_pushString(vm_s, bufp);
+    ose_pushInt32(vm_s, 0);
+    ose_pushInt32(vm_s, promptlen);
+    ose_pushInt32(vm_s, promptlen);
+    /* ose_push(vm_s); */
+    /* ose_concatenateStrings(vm_s); */
 }
 
 static void ose_lined_init(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
-    ose_pushString(vm_s, "");
-    ose_lined_prompt(osevm);
+    /* ose_pushString(vm_s, ""); */
+    /* ose_lined_prompt(osevm); */
+}
+
+static void ose_lined_addToHist(ose_bundle osevm)
+{
+    ose_bundle vm_s = OSEVM_STACK(osevm);
+    ose_bundle vm_lh = ose_enter(osevm, "/lh");
+    ose_assert(ose_getBundlePtr(vm_lh));
+    
+    if(ose_bundleHasAtLeastNElems(vm_s, 1) == OSETT_TRUE
+       && ose_peekType(vm_s) == OSETT_MESSAGE
+       && ose_peekMessageArgType(vm_s) == OSETT_STRING)
+    {
+        const char * const str = ose_peekString(vm_s);
+        int32_t plen = ose_pstrlen(str);
+        int32_t lhsize = ose_spaceAvailable(vm_lh);
+        if(plen + 12 < lhsize)
+        {
+            ose_pushMessage(vm_lh, "/lh", strlen("/lh"),
+                            1, OSETT_STRING, str);
+            ose_swap(vm_lh);
+            ose_push(vm_lh);
+        }
+    }
 }
 
 void ose_main(ose_bundle osevm)
@@ -669,9 +686,6 @@ void ose_main(ose_bundle osevm)
 
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_pushBundle(vm_s);
-    /* ose_pushMessage(vm_s, "/lined/read", strlen("/lined/read"), 1, */
-    /*                 OSETT_ALIGNEDPTR, ose_lined_read); */
-    /* ose_push(vm_s); */
     ose_pushMessage(vm_s, "/lined/char", strlen("/lined/char"), 1,
                     OSETT_ALIGNEDPTR, ose_lined_char);
     ose_push(vm_s);
@@ -687,161 +701,23 @@ void ose_main(ose_bundle osevm)
     ose_pushMessage(vm_s, "/lined/init", strlen("/lined/init"), 1,
                     OSETT_ALIGNEDPTR, ose_lined_init);
     ose_push(vm_s);
-    ose_pushMessage(vm_s, "/lined/parse", strlen("/lined/parse"), 1,
-                    OSETT_BLOB,
-                    OSE_BUNDLE_HEADER_LEN,
-                    OSE_BUNDLE_HEADER);
-    ose_push(vm_s);
-    {
-        ose_pushMessage(vm_s, "/lined/line",
-                        strlen("/lined/line"), 0);
-        /* the input string is sitting on top of the stack.  we test
-           it against the prompt, and re-prompt if it's the same */
-        /* make a copy of the input string for the test */
-        ose_pushString(vm_s, "/!/dup");
-        {
-            /* else clause of the if statement.  this means the
-               input string contains more than just the prompt */
-            
-            /* store command that was entered */
-            ose_pushString(vm_s, "/!/dup");
-            ose_pushString(vm_s, "/>/le");
-            ose_pushString(vm_s, "/!/swap");
-            ose_pushString(vm_s, "/s//cmd");
-            ose_pushString(vm_s, "/!/assign");
-            ose_pushString(vm_s, "/</le");
-            {
-                /* add command to history */
-                ose_pushString(vm_s, "/!/dup");
-                ose_pushString(vm_s, "/>/lh");
-                ose_pushString(vm_s, "/!/pop");
-
-                ose_pushString(vm_s, "/!/count/items");
-                ose_pushBundle(vm_s);
-                ose_pushBundle(vm_s);
-                ose_pushString(vm_s, "/!/pop");
-                ose_push(vm_s);
-                ose_pushString(vm_s, "/!/drop");
-                ose_push(vm_s);
-                ose_pushString(vm_s, "/!/rot");
-                ose_pushInt32(vm_s, 100);
-                ose_pushString(vm_s, "/!/lte");
-                ose_pushString(vm_s, "/!/if");
-                ose_pushString(vm_s, "/!/drop");
-
-                ose_pushString(vm_s, "/!/rot");
-                ose_pushString(vm_s, "/!/swap");
-                ose_pushString(vm_s, "/!/push");
-                ose_pushString(vm_s, "/lh");
-                ose_pushString(vm_s, "/!/assign");
-                ose_pushString(vm_s, "/</lh");
-            }
-            /* remove prompt */
-            /* ose_pushInt32(vm_s, 2); */
-            ose_pushString(vm_s, "/>/lo");
-            
-            ose_pushString(vm_s, "/s//ps");
-            ose_pushString(vm_s, "/!/lookup");
-            ose_pushString(vm_s, "/!/nip");
-            ose_pushString(vm_s, "/!/length/item");
-            ose_pushString(vm_s, "/!/nip");
-            
-            ose_pushString(vm_s, "/!/decat/string/fromstart");
-            ose_pushString(vm_s, "/!/pop");
-            ose_pushString(vm_s, "/!/nip");
-            /* parse */
-            ose_pushString(vm_s, "/!/lined/parse");
-            ose_pushString(vm_s, "/>/_e");
-            ose_pushString(vm_s, "/!/swap");
-            ose_pushString(vm_s, "/!/exec");
-            ose_pushString(vm_s, "/</_e");
-            ose_pushString(vm_s, "/!/bundle/all");
-            ose_pushString(vm_s, "/!/lined/format");
-            {
-                /* put the command at the beginning of the 
-                   output string, and add a newline at the 
-                   end of the formatted text */
-                ose_pushString(vm_s, "/>/le");
-                ose_pushString(vm_s, "/s//cmd");
-                ose_pushString(vm_s, "/!/lookup");
-                ose_pushString(vm_s, "/!/nip");
-
-                ose_pushString(vm_s, "/s/"ANSI_COLOR_BRIGHT_GREEN);
-                ose_pushString(vm_s, "/!/swap");
-                ose_pushString(vm_s, "/!/push");
-                ose_pushString(vm_s, "/!/concat/strings");
-                
-                ose_pushString(vm_s, "/s/"ANSI_COLOR_RESET"\n");
-                ose_pushString(vm_s, "/!/push");
-                ose_pushString(vm_s, "/!/concat/strings");
-                ose_pushString(vm_s, "/!/swap");
-                ose_pushString(vm_s, "/!/push");
-                ose_pushString(vm_s, "/!/concat/strings");
-                ose_pushString(vm_s, "/s/\n");
-                ose_pushString(vm_s, "/!/push");
-                ose_pushString(vm_s, "/!/concat/strings");
-            }
-            ose_pushString(vm_s, "/!/push");
-            ose_pushString(vm_s, "/!/unpack/drop");
-            ose_pushString(vm_s, "/!/lined/prompt");
-            ose_pushInt32(vm_s, 0);
-            /* ose_pushInt32(vm_s, 2); */
-            /* ose_pushInt32(vm_s, 2); */
-            /* use the length of the prompt as curpos and bufpos */
-            ose_pushString(vm_s, "/>/lo");
-            ose_pushString(vm_s, "/s//ps");
-            ose_pushString(vm_s, "/!/lookup");
-            ose_pushString(vm_s, "/!/nip");
-            ose_pushString(vm_s, "/!/length/item");
-            ose_pushString(vm_s, "/!/nip");
-            ose_pushString(vm_s, "/!/dup");
-            ose_pushInt32(vm_s, 67);
-            ose_bundleFromTop(vm_s);
-        }
-        {
-            /* then clause of the if statement. this means the input
-               string is the same as the prompt, so we just reset
-               the prompt */
-            ose_pushString(vm_s, "/!/drop");
-            ose_pushString(vm_s, "/s/");
-            ose_pushString(vm_s, "/!/lined/prompt");
-            ose_pushInt32(vm_s, 0);
-            /* ose_pushInt32(vm_s, 2); */
-            /* ose_pushInt32(vm_s, 2); */
-            /* use the length of the prompt as curpos and bufpos */
-            ose_pushString(vm_s, "/>/lo");
-            ose_pushString(vm_s, "/s//ps");
-            ose_pushString(vm_s, "/!/lookup");
-            ose_pushString(vm_s, "/!/nip");
-            ose_pushString(vm_s, "/!/length/item");
-            ose_pushString(vm_s, "/!/nip");
-            ose_pushString(vm_s, "/!/dup");
-            ose_pushInt32(vm_s, 11);
-            ose_bundleFromTop(vm_s);
-        }
-        /* get the copy of the input string for the test */
-        ose_pushString(vm_s, "/!/rot");
-        /* get a copy of the prompt */
-        ose_pushString(vm_s, "/>/lo");
-        ose_pushString(vm_s, "/s//ps");
-        ose_pushString(vm_s, "/!/lookup");
-        ose_pushString(vm_s, "/!/nip");
-        ose_pushString(vm_s, "/!/pop/all/drop");
-        /* test */
-        ose_pushString(vm_s, "/!/eql");
-        /* now run the if statement */
-        ose_pushString(vm_s, "/!/if");
-        /* if uses exec which leaves a copy of env on the stack */
-        ose_pushString(vm_s, "/</_e");
-        ose_pushInt32(vm_s, 12);
-        ose_bundleFromTop(vm_s);
-        ose_push(vm_s);
-    }
+    ose_pushMessage(vm_s,
+                    "/lined/addtohist", strlen("/lined/addtohist"),
+                    1, OSETT_ALIGNEDPTR, ose_lined_addToHist);
     ose_push(vm_s);
 
+    /* empty bindings for C^c and RET */
     ose_pushMessage(vm_s, "/lined/binding/C^c",
                     strlen("/lined/binding/C^c"), 0);
     ose_pushBundle(vm_s);
     ose_push(vm_s);
+    ose_push(vm_s);
+    ose_pushMessage(vm_s, "/lined/binding/RET",
+                    strlen("/lined/binding/RET"), 0);
+    ose_pushBundle(vm_s);
+    ose_push(vm_s);
+    ose_push(vm_s);
+    ose_pushMessage(vm_s, "/lined/NL", strlen("/lined/NL"), 1,
+                    OSETT_STRING, "\n");
     ose_push(vm_s);
 }
