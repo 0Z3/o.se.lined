@@ -10,8 +10,7 @@ OSE_CFILES=\
 	ose_match.c\
 	ose_context.c\
 	ose_assert.c\
-	ose_print.c\
-	sys/ose_term.c\
+	ose_print.c
 
 MOD_FILES=\
 	ose_$(BASENAME).c
