@@ -272,7 +272,7 @@ static void ose_lined_char(ose_bundle osevm)
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_bundle vm_c = OSEVM_CONTROL(osevm);
     ose_bundle vm_i = OSEVM_INPUT(osevm);
-    ose_assert(ose_bundleHasAtLeastNElems(vm_s, 1) == OSETT_TRUE);
+    ose_assert(ose_bundleHasAtLeastNElems(vm_s, 1));
     ose_assert(ose_peekType(vm_s) == OSETT_MESSAGE);
     ose_assert(ose_peekMessageArgType(vm_s) == OSETT_INT32);
     /* int32_t c = ose_popInt32(vm_s); */
@@ -285,7 +285,7 @@ static void ose_lined_char(ose_bundle osevm)
 
 
     int32_t numchars = 0;
-    if(ose_bundleHasAtLeastNElems(vm_s, 2) == OSETT_TRUE
+    if(ose_bundleHasAtLeastNElems(vm_s, 2)
        && ose_peekType(vm_s) == OSETT_MESSAGE
        && ose_peekMessageArgType(vm_s) == OSETT_INT32)
     {
@@ -295,7 +295,7 @@ static void ose_lined_char(ose_bundle osevm)
     {
         return;
     }
-    ose_assert(ose_bundleHasAtLeastNElems(vm_s, numchars) == OSETT_TRUE);
+    ose_assert(ose_bundleHasAtLeastNElems(vm_s, numchars));
 
     int32_t i = 0;
     while(i < numchars)
@@ -628,7 +628,7 @@ static void ose_lined_addToHist(ose_bundle osevm)
     ose_bundle vm_lh = ose_enter(osevm, "/lh");
     ose_assert(ose_getBundlePtr(vm_lh));
     
-    if(ose_bundleHasAtLeastNElems(vm_s, 1) == OSETT_TRUE
+    if(ose_bundleHasAtLeastNElems(vm_s, 1)
        && ose_peekType(vm_s) == OSETT_MESSAGE
        && ose_peekMessageArgType(vm_s) == OSETT_STRING)
     {
