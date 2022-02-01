@@ -27,7 +27,6 @@ OSE_CFILES=\
 	ose_stackops.c\
 	ose_match.c\
 	ose_context.c\
-	ose_assert.c\
 	ose_print.c
 
 MOD_FILES=\
