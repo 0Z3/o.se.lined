@@ -56,17 +56,6 @@
 #define WORDBREAKCHARS ose_getBundlePtr(vm_lo) +    \
     WORDBREAKCHARS_OFFSET
 
-#define HISTNUM_OFFSET (OSE_BUNDLE_HEADER_LEN + 12)
-#define HISTNUM ose_readInt32(vm_lh, HISTNUM_OFFSET)
-#define INC_HISTNUM \
-    ose_writeInt32(vm_lh, HISTNUM_OFFSET,                   \
-                   ose_readInt32(vm_lh, HISTNUM_OFFSET) + 1)
-#define DEC_HISTNUM \
-    ose_writeInt32(vm_lh, HISTNUM_OFFSET,                   \
-                   ose_readInt32(vm_lh, HISTNUM_OFFSET) - 1)
-#define RESET_HISTNUM ose_writeInt32(vm_lh, HISTNUM_OFFSET, -1)
-#define HISTLIST_TT_OFFSET HISTNUM_OFFSET + 4 + 8
-
 #ifdef OSE_DEBUG
 const int32_t bufsize_offset = BUFSIZE_OFFSET;
 const int32_t buflen_offset = BUFLEN_OFFSET;
@@ -199,52 +188,73 @@ static void setposvars(ose_bundle vm_le,
     ose_writeInt32(vm_le, CURPOS_OFFSET, curpos);
 }
 
-static const char * const gethistitem(ose_bundle vm_lh)
+static const char *gethistitem(ose_bundle vm_lh)
 {
-    const int32_t histnum = HISTNUM;
-    const char * const lh = ose_getBundlePtr(vm_lh);
-    const int32_t histlist_tt_offset = HISTLIST_TT_OFFSET;
-    const int32_t histcount = strlen(lh +
-                                     histlist_tt_offset) - 1;
-    if(histcount == 0)
+    const int32_t histnum =
+        ose_readInt32(vm_lh, ose_getLastBundleElemOffset(vm_lh) + 16);
+    int32_t o = OSE_BUNDLE_HEADER_LEN;
+    const int32_t s = ose_readInt32(vm_lh, o);
+    int32_t i;
+    o += 4 + OSE_BUNDLE_HEADER_LEN;
+    if(histnum < 0)
     {
         return NULL;
     }
-    const int32_t hist_offset = histlist_tt_offset +
-        ose_pnbytes(histcount + 1);
-    int32_t i;
-    const char *p = lh + hist_offset;
-    int32_t plen = ose_pstrlen(p);
-    for(i = 0; i < histnum; i++)
+
+    for(i = 0;
+        i < histnum && (o - (OSE_BUNDLE_HEADER_LEN + 4)) < s;
+        ++i, o += ose_readInt32(vm_lh, o) + 4)
     {
-        p += plen;
-        plen = ose_pstrlen(p);
+        ;
     }
-    return p;
+    {
+        const char *p = ose_getBundlePtr(vm_lh) + o + 12;
+        return p;
+    }
 }
 
 static void inchistnum(ose_bundle vm_lh)
 {
-    const int32_t histnum = HISTNUM;
-    const char * const lh = ose_getBundlePtr(vm_lh);
-    const int32_t histlist_tt_offset = HISTLIST_TT_OFFSET;
-    const int32_t histcount = strlen(lh +
-                                     histlist_tt_offset);
-    /* we want to stop on the last item, and have to account for the
-       comma at the beginning of the typetag string */
-    if(histnum < histcount - 2)
+    const int32_t o = ose_getLastBundleElemOffset(vm_lh) + 12;
+    ose_assert(o > OSE_BUNDLE_HEADER_LEN);
+    ose_assert(o < ose_readSize(vm_lh));
     {
-        INC_HISTNUM;
+        const int32_t histcount = ose_readInt32(vm_lh, o);
+        const int32_t histnum = ose_readInt32(vm_lh, o + 4);
+        ose_assert(histcount >= 0);
+        ose_assert(histnum < histcount);
+        if(histnum + 1 < histcount)
+        {
+            ose_writeInt32(vm_lh, o + 4,
+                           ose_readInt32(vm_lh, o + 4) + 1);
+        }
     }
 }
 
 static void dechistnum(ose_bundle vm_lh)
 {
-    const int32_t histnum = HISTNUM;
-    if(histnum > 0)
+    const int32_t o = ose_getLastBundleElemOffset(vm_lh) + 12;
+    ose_assert(o > OSE_BUNDLE_HEADER_LEN);
+    ose_assert(o < ose_readSize(vm_lh));
     {
-        DEC_HISTNUM;
+        const int32_t histcount = ose_readInt32(vm_lh, o);
+        const int32_t histnum = ose_readInt32(vm_lh, o + 4);
+        ose_assert(histcount >= 0);
+        ose_assert(histnum < histcount);
+        if(histnum - 1 >= -1)
+        {
+            ose_writeInt32(vm_lh, o + 4,
+                           ose_readInt32(vm_lh, o + 4) - 1);
+        }
     }
+}
+
+static void resethistnum(ose_bundle vm_lh)
+{
+    const int32_t o = ose_getLastBundleElemOffset(vm_lh) + 12;
+    ose_assert(o > OSE_BUNDLE_HEADER_LEN);
+    ose_assert(o < ose_readSize(vm_lh));
+    ose_writeInt32(vm_lh, o + 4, -1);
 }
 
 static int chariswbc(char c, int32_t nwbcs,
@@ -373,6 +383,7 @@ static void ose_lined_char(ose_bundle osevm)
             ose_writeInt32(vm_le, BUFLEN_OFFSET, curpos);
             pushline(osevm, bufp, buflen, curpos, curpos);
             buflen = curpos;
+            resethistnum(vm_lh);
         }
         break;
         case CTRL('n'):
@@ -382,7 +393,13 @@ static void ose_lined_char(ose_bundle osevm)
             const char * const p = gethistitem(vm_lh);
             if(!p)
             {
-                pushline(osevm, bufp, buflen, buflen, curpos);
+                /* pushline(osevm, bufp, buflen, buflen, curpos); */
+                memset(bufp + promptlen, 0, buflen - promptlen);
+                ose_writeInt32(vm_le, BUFLEN_OFFSET, promptlen);
+                curpos = promptlen;
+                ose_writeInt32(vm_le, CURPOS_OFFSET, promptlen);
+                pushline(osevm, bufp, buflen, curpos, curpos);
+                buflen = curpos;
                 break;
             }
             int32_t len = strlen(p);
@@ -422,7 +439,7 @@ static void ose_lined_char(ose_bundle osevm)
             clear(vm_le);
             ose_pushString(vm_c, "/!/lined/binding/RET");
             ose_swap(vm_c);
-            RESET_HISTNUM;
+            resethistnum(vm_lh);
             break;
         case BS:
         case DEL:
@@ -438,7 +455,7 @@ static void ose_lined_char(ose_bundle osevm)
                 pushline(osevm, b + BUF_OFFSET,
                          buflen, buflen, curpos);
             }
-            RESET_HISTNUM;
+            resethistnum(vm_lh);
             break;
         case ESC:
             if(i < numchars
@@ -611,15 +628,11 @@ static void ose_lined_prompt(ose_bundle osevm)
     ose_pushInt32(vm_s, 0);
     ose_pushInt32(vm_s, promptlen);
     ose_pushInt32(vm_s, promptlen);
-    /* ose_push(vm_s); */
-    /* ose_concatenateStrings(vm_s); */
 }
 
 static void ose_lined_init(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
-    /* ose_pushString(vm_s, ""); */
-    /* ose_lined_prompt(osevm); */
 }
 
 static void ose_lined_addToHist(ose_bundle osevm)
@@ -627,20 +640,35 @@ static void ose_lined_addToHist(ose_bundle osevm)
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_bundle vm_lh = ose_enter(osevm, "/lh");
     ose_assert(ose_getBundlePtr(vm_lh));
-    
     if(ose_bundleHasAtLeastNElems(vm_s, 1)
        && ose_peekType(vm_s) == OSETT_MESSAGE
        && ose_peekMessageArgType(vm_s) == OSETT_STRING)
     {
         const char * const str = ose_peekString(vm_s);
-        int32_t plen = ose_pstrlen(str);
-        int32_t lhsize = ose_spaceAvailable(vm_lh);
-        if(plen + 12 < lhsize)
+        const int32_t len = ose_pstrlen(str);
+        const int32_t msgsize = len + 12;
+        int32_t freespace = ose_spaceAvailable(vm_lh);
+        if(freespace - msgsize <= 20)
         {
-            ose_pushMessage(vm_lh, "/lh", strlen("/lh"),
-                            1, OSETT_STRING, str);
             ose_swap(vm_lh);
-            ose_push(vm_lh);
+            while(freespace - msgsize <= 20 + msgsize + 4)
+            {
+                ose_pop(vm_lh);
+                ose_drop(vm_lh);
+                freespace = ose_spaceAvailable(vm_lh);
+            }
+            ose_swap(vm_lh);
+        }
+        ose_push(vm_lh);
+        ose_pushString(vm_lh, str);
+        ose_swap(vm_lh);
+        ose_unpackDrop(vm_lh);
+        ose_bundleAll(vm_lh);
+        ose_pop(vm_lh);
+        {
+            const int32_t o = ose_getLastBundleElemOffset(vm_lh);
+            ose_writeInt32(vm_lh, o + 12,
+                           ose_readInt32(vm_lh, o + 12) + 1);
         }
     }
 }
@@ -678,9 +706,12 @@ void ose_main(ose_bundle osevm)
     ose_pushMessage(vm_lo, "/wb", 3, 1,
                     OSETT_STRING, OSE_LINED_WORDBREAKCHARS);
     /* history */
-    ose_pushMessage(vm_lh, "/en", 3, 1,
-                    OSETT_INT32, -1);
-    ose_pushMessage(vm_lh, "/lh", 3, 0);
+    /* ose_pushMessage(vm_lh, "/en", 3, 1, */
+    /*                 OSETT_INT32, -1); */
+    /* ose_pushMessage(vm_lh, "/lh", 3, 0); */
+    ose_pushBundle(vm_lh);
+    ose_pushMessage(vm_lh, "/en", 3, 2,
+                    OSETT_INT32, 0, OSETT_INT32, -1);
     /* kill ring */
     ose_pushMessage(vm_lk, "/lk", 3, 0);
 
