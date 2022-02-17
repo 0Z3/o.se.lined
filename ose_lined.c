@@ -404,6 +404,10 @@ static void ose_lined_char(ose_bundle osevm)
             }
             int32_t len = strlen(p);
             int32_t plen = ose_pnbytes(len);
+            if(len < buflen)
+            {
+                memset(bufp + promptlen, 0, buflen - promptlen);
+            }
             memcpy(bufp + promptlen, p, plen);
             len += promptlen;
             pushline(osevm, bufp, len, len, len);
@@ -422,6 +426,10 @@ static void ose_lined_char(ose_bundle osevm)
             }
             int32_t len = strlen(p);
             int32_t plen = ose_pnbytes(len);
+            if(len < buflen)
+            {
+                memset(bufp + promptlen, 0, buflen - promptlen);
+            }
             memcpy(bufp + promptlen, p, plen);
             len += promptlen;
             pushline(osevm, bufp, len, len, len);
